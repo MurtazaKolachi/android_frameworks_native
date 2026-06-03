@@ -468,7 +468,7 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
         mFrameTimeline(mFactory.createFrameTimeline(mTimeStats, mPid)),
         mCompositionEngine(mFactory.createCompositionEngine()),
         mOffloadedCompositionEngine(mFactory.createCompositionEngine()),
-        mHwcServiceName(base::GetProperty("debug.sf.hwc_service_name"s, "default"s)),
+        mHwcServiceName(base::GetProperty("debug.sf.hwc_service_name", "default")),
         mTunnelModeEnabledReporter(sp<TunnelModeEnabledReporter>::make()),
         mEmulatedDisplayDensity(getDensityFromProperty("qemu.sf.lcd_density", false)),
         mInternalDisplayDensity(
@@ -479,7 +479,7 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory, SkipInitializationTag)
                                                         sysprop::display_update_imminent_timeout_ms(
                                                                 80)))),
         mWindowInfosListenerInvoker(sp<WindowInfosListenerInvoker>::make()),
-        mSkipPowerOnForQuiescent(base::GetBoolProperty("ro.boot.quiescent"s, false)) {
+        mSkipPowerOnForQuiescent(base::GetBoolProperty("ro.boot.quiescent", false)) {
     ALOGI("Using HWComposer service: %s", mHwcServiceName.c_str());
 }
 
@@ -493,7 +493,9 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
 
     useHwcForRgbToYuv = force_hwc_copy_for_virtual_displays(false);
 
-    maxFrameBufferAcquiredBuffers = max_frame_buffer_acquired_buffers(2);
+    int64_t buffers = max_frame_buffer_acquired_buffers(2);
+    maxFrameBufferAcquiredBuffers = buffers < 3 ? buffers : 6;
+
     minAcquiredBuffers =
             SurfaceFlingerProperties::min_acquired_buffers().value_or(minAcquiredBuffers);
     maxAcquiredBuffersOpt = SurfaceFlingerProperties::max_acquired_buffers();
@@ -528,33 +530,32 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
     property_get("ro.build.type", value, "user");
     mIsUserBuild = strcmp(value, "user") == 0;
 
-    mDebugFlashDelay = base::GetUintProperty("debug.sf.showupdates"s, 0u);
+    mDebugFlashDelay = base::GetUintProperty("debug.sf.showupdates", 0u);
 
-    mBackpressureGpuComposition = base::GetBoolProperty("debug.sf.enable_gl_backpressure"s, true);
+    property_get("debug.sf.disable_backpressure", value, "0");
+    mPropagateBackpressure = !atoi(value);
+    ALOGI_IF(!mPropagateBackpressure, "Disabling backpressure propagation");
+
+    mBackpressureGpuComposition = base::GetBoolProperty("debug.sf.enable_gl_backpressure", true);
     ALOGI_IF(mBackpressureGpuComposition, "Enabling backpressure for GPU composition");
 
-    property_get("ro.surface_flinger.supports_background_blur", value, "0");
-    bool supportsBlurs = atoi(value);
-    mSupportsBlur = supportsBlurs;
+    mSupportsBlur = base::GetBoolProperty("ro.surface_flinger.supports_background_blur", false);
     ALOGI_IF(!mSupportsBlur, "Disabling blur effects, they are not supported.");
 
     property_get("debug.sf.luma_sampling", value, "1");
     mLumaSampling = atoi(value);
 
-    property_get("debug.sf.disable_client_composition_cache", value, "0");
-    mDisableClientCompositionCache = atoi(value);
+    mDisableClientCompositionCache = base::GetBoolProperty("debug.sf.disable_client_composition_cache", false);
 
-    property_get("debug.sf.predict_hwc_composition_strategy", value, "1");
-    mPredictCompositionStrategy = atoi(value);
+    mPredictCompositionStrategy = base::GetBoolProperty("debug.sf.predict_hwc_composition_strategy", true);
 
     property_get("debug.sf.treat_170m_as_sRGB", value, "0");
     mTreat170mAsSrgb = atoi(value);
 
-    property_get("debug.sf.dim_in_gamma_in_enhanced_screenshots", value, 0);
-    mDimInGammaSpaceForEnhancedScreenshots = atoi(value);
+    mDimInGammaSpaceForEnhancedScreenshots = base::GetBoolProperty("debug.sf.dim_in_gamma_in_enhanced_screenshots", false);
 
     mIgnoreHwcPhysicalDisplayOrientation =
-            base::GetBoolProperty("debug.sf.ignore_hwc_physical_display_orientation"s, false);
+            base::GetBoolProperty("debug.sf.ignore_hwc_physical_display_orientation", false);
 
     // We should be reading 'persist.sys.sf.color_saturation' here
     // but since /data may be encrypted, we need to wait until after vold
@@ -588,6 +589,9 @@ SurfaceFlinger::SurfaceFlinger(Factory& factory) : SurfaceFlinger(factory, SkipI
 }
 
 LatchUnsignaledConfig SurfaceFlinger::getLatchUnsignaledConfig() {
+    if (base::GetBoolProperty("debug.sf.latch_unsignaled"s, false)) {
+        return LatchUnsignaledConfig::Always;
+    }
     if (base::GetBoolProperty("debug.sf.auto_latch_unsignaled"s, true)) {
         return LatchUnsignaledConfig::AutoSingleLayer;
     }
@@ -1160,8 +1164,8 @@ void SurfaceFlinger::readPersistentProperties() {
 
     char value[PROPERTY_VALUE_MAX];
 
-    property_get("persist.sys.sf.color_saturation", value, "1.0");
-    mGlobalSaturationFactor = atof(value);
+    std::string saturationValue = base::GetProperty("persist.sys.sf.color_saturation", "1.0");
+    mGlobalSaturationFactor = atof(saturationValue.c_str());
     updateColorMatrixLocked();
     ALOGV("Saturation is set to %.2f", mGlobalSaturationFactor);
 
@@ -1169,7 +1173,7 @@ void SurfaceFlinger::readPersistentProperties() {
     mDisplayColorSetting = static_cast<DisplayColorSetting>(atoi(value));
 
     mForceColorMode =
-            static_cast<ui::ColorMode>(base::GetIntProperty("persist.sys.sf.color_mode"s, 0));
+            static_cast<ui::ColorMode>(base::GetIntProperty("persist.sys.sf.color_mode", 0));
 }
 
 status_t SurfaceFlinger::getSupportedFrameTimestamps(std::vector<FrameEvent>* outSupported) const {
@@ -2902,7 +2906,7 @@ bool SurfaceFlinger::commit(PhysicalDisplayId pacesetterId,
     }
 
     if (pacesetterFrameTarget.wouldBackpressureHwc()) {
-        if (mBackpressureGpuComposition || pacesetterFrameTarget.didMissHwcFrame()) {
+        if (mPropagateBackpressure && (mBackpressureGpuComposition || pacesetterFrameTarget.didMissHwcFrame())) {
             mScheduler->getVsyncSchedule()->getTracker().onFrameMissed(
                     pacesetterFrameTarget.expectedPresentTime());
             const Duration slack = TimePoint::now() - pacesetterFrameTarget.frameBeginTime();
@@ -5007,6 +5011,9 @@ void SurfaceFlinger::initScheduler(const sp<const DisplayDevice>& display) {
     if (mBackpressureGpuComposition) {
         features |= Feature::kBackpressureGpuComposition;
     }
+    if (mPropagateBackpressure) {
+        features |= Feature::kPropagateBackpressure;
+    }
     if (getHwComposer().getComposer()->isSupported(
                 Hwc2::Composer::OptionalFeature::ExpectedPresentTime)) {
         features |= Feature::kExpectedPresentTime;
@@ -5264,10 +5271,13 @@ TransactionHandler::TransactionReadiness SurfaceFlinger::transactionReadyBufferC
                     return TraverseBuffersReturnValues::STOP_TRAVERSAL;
                 }
 
+                // ignore the acquire fence if LatchUnsignaledConfig::Always is set.
+                const bool checkAcquireFence =
+                        enableLatchUnsignaledConfig != LatchUnsignaledConfig::Always;
                 const bool acquireFenceAvailable = s.bufferData &&
                         s.bufferData->flags.test(BufferData::BufferDataChange::fenceChanged) &&
                         s.bufferData->acquireFence;
-                const bool fenceSignaled = !acquireFenceAvailable ||
+                const bool fenceSignaled = !checkAcquireFence || !acquireFenceAvailable ||
                         s.bufferData->acquireFence->getStatus() != Fence::Status::Unsignaled;
                 if (!fenceSignaled) {
                     // check fence status
@@ -5373,6 +5383,11 @@ bool SurfaceFlinger::shouldLatchUnsignaled(const layer_state_t& state, size_t nu
     if (enableLatchUnsignaledConfig == LatchUnsignaledConfig::Disabled) {
         SFTRACE_FORMAT_INSTANT("%s: false (LatchUnsignaledConfig::Disabled)", __func__);
         return false;
+    }
+
+    if (enableLatchUnsignaledConfig == LatchUnsignaledConfig::Always) {
+        SFTRACE_FORMAT_INSTANT("%s: true (LatchUnsignaledConfig::Always)", __func__);
+        return true;
     }
 
     // We only want to latch unsignaled when a single layer is updated in this

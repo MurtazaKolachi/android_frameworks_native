@@ -66,19 +66,14 @@ inline std::string toNsString(std::chrono::duration<Rep, Per> t) {
 }
 
 RegionSamplingThread::EnvironmentTimingTunables::EnvironmentTimingTunables() {
-    char value[PROPERTY_VALUE_MAX] = {};
+    int const samplingDurationNsRaw = base::GetIntProperty("debug.sf.region_sampling_duration_ns",
+                                                           (int)std::chrono::duration_cast<std::chrono::nanoseconds>(defaultRegionSamplingWorkDuration).count());
 
-    property_get("debug.sf.region_sampling_duration_ns", value,
-                 toNsString(defaultRegionSamplingWorkDuration).c_str());
-    int const samplingDurationNsRaw = atoi(value);
+    int const samplingPeriodNsRaw = base::GetIntProperty("debug.sf.region_sampling_period_ns",
+                                                         (int)std::chrono::duration_cast<std::chrono::nanoseconds>(defaultRegionSamplingPeriod).count());
 
-    property_get("debug.sf.region_sampling_period_ns", value,
-                 toNsString(defaultRegionSamplingPeriod).c_str());
-    int const samplingPeriodNsRaw = atoi(value);
-
-    property_get("debug.sf.region_sampling_timer_timeout_ns", value,
-                 toNsString(defaultRegionSamplingTimerTimeout).c_str());
-    int const samplingTimerTimeoutNsRaw = atoi(value);
+    int const samplingTimerTimeoutNsRaw = base::GetIntProperty("debug.sf.region_sampling_timer_timeout_ns",
+                                                               (int)std::chrono::duration_cast<std::chrono::nanoseconds>(defaultRegionSamplingTimerTimeout).count());
 
     if ((samplingPeriodNsRaw < 0) || (samplingTimerTimeoutNsRaw < 0)) {
         ALOGW("User-specified sampling tuning options nonsensical. Using defaults");

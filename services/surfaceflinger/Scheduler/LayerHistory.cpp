@@ -43,9 +43,7 @@ bool traceEnabled() {
 }
 
 bool useFrameRatePriority() {
-    char value[PROPERTY_VALUE_MAX];
-    property_get("debug.sf.use_frame_rate_priority", value, "1");
-    return atoi(value);
+    return base::GetBoolProperty("debug.sf.use_frame_rate_priority", true);
 }
 
 void trace(const LayerInfo& info, LayerHistory::LayerVoteType type, int fps) {

@@ -70,9 +70,7 @@ bool LayerTraceGenerator::generate(const perfetto::protos::TransactionTraceFile&
     ui::DisplayMap<ui::LayerStack, frontend::DisplayInfo> displayInfos;
 
     ShadowSettings globalShadowSettings{.ambientColor = {1, 1, 1, 1}};
-    char value[PROPERTY_VALUE_MAX];
-    property_get("ro.surface_flinger.supports_background_blur", value, "0");
-    bool supportsBlur = atoi(value);
+    bool supportsBlur = base::GetBoolProperty("ro.surface_flinger.supports_background_blur", false);
 
     ALOGD("Generating %d transactions...", traceFile.entry_size());
     for (int i = 0; i < traceFile.entry_size(); i++) {
